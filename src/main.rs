@@ -1,10 +1,12 @@
 use crate::model::QueryRoot;
 use crate::observability::metrics::{create_prometheus_recorder, track_metrics};
+use crate::observability::tracing::create_tracer_from_env;
 use crate::routes::{graphql_handler, graphql_playground, health};
 use async_graphql::{EmptyMutation, EmptySubscription, Schema};
 use axum::{extract::Extension, middleware, routing::get, Router, Server};
-use observability::tracing::create_tracer_from_env;
+use dotenv::dotenv;
 use std::future::ready;
+use tokio::signal;
 use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -14,8 +16,35 @@ mod model;
 mod observability;
 mod routes;
 
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    opentelemetry::global::shutdown_tracer_provider();
+}
+
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
 
     let schema = Schema::build(QueryRoot, EmptyMutation, EmptySubscription).finish();
 
@@ -44,6 +73,7 @@ async fn main() {
 
     Server::bind(&"0.0.0.0:8000".parse().unwrap())
         .serve(app.into_make_service())
+        .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();
 }

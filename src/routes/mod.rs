@@ -1,14 +1,14 @@
 use crate::model::ServiceSchema;
-use serde::Serialize;
 use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
     extract::Extension,
-    http::StatusCode, 
-    response::{Html, IntoResponse}, 
-    Json
+    http::StatusCode,
+    response::{Html, IntoResponse},
+    Json,
 };
 use opentelemetry::trace::TraceContextExt;
+use serde::Serialize;
 use tracing::{info, span, Instrument, Level};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -30,21 +30,21 @@ pub(crate) async fn graphql_playground() -> impl IntoResponse {
 }
 
 pub(crate) async fn graphql_handler(
+    schema: Extension<ServiceSchema>,
     req: GraphQLRequest,
-    Extension(schema): Extension<ServiceSchema>,
 ) -> GraphQLResponse {
-    let span = span!(Level::INFO, "graphql_execution"); 
+    let span = span!(Level::INFO, "graphql_execution");
 
     info!("Processing GraphQL request");
 
-    let response = async move { schema.execute(req.into_inner()).await } // (2)
+    let response = async move { schema.execute(req.into_inner()).await }
         .instrument(span.clone())
         .await;
 
     info!("Processing GraphQL request finished");
 
     response
-        .extension( 
+        .extension(
             "traceId",
             async_graphql::Value::String(format!(
                 "{}",
