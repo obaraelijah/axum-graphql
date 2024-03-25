@@ -5,7 +5,7 @@ use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
     extract::Extension,
     http::StatusCode, 
-    response::IntoResponse, 
+    response::{Html, IntoResponse}, 
     Json
 };
 
@@ -23,9 +23,15 @@ pub(crate) async fn health() -> impl IntoResponse {
     (StatusCode::OK, Json(health))
 }
 
+pub(crate) async fn graphql_playground() -> impl IntoResponse {
+    Html(playground_source( 
+        GraphQLPlaygroundConfig::new("/").subscription_endpoint("/ws"),
+    ))
+}
+
 pub(crate) async fn graphql_handler(
-    req: GraphQLRequest,
-    Extension(schema): Extension<ServiceSchema>,
+    req: Json<GraphQLRequest>,
+    Extension(schema): Extension<ServiceSchema>, // (2)
 ) -> GraphQLResponse {
-    schema.execute(req.into_inner()).await.into()
+    schema.execute(req.0.into_inner()).await.into() // (3)
 }
