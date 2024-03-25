@@ -8,30 +8,48 @@ use axum::{
     response::{Html, IntoResponse}, 
     Json
 };
-
+use opentelemetry::trace::TraceContextExt;
+use tracing::{info, span, Instrument, Level};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 #[derive(Serialize)]
-struct Health { 
-    healthy: bool
+struct Health {
+    healthy: bool,
 }
 
-pub(crate) async fn health() -> impl IntoResponse { 
-    let health = Health {
-        healthy: true
-    };
+pub(crate) async fn health() -> impl IntoResponse {
+    let health = Health { healthy: true };
 
     (StatusCode::OK, Json(health))
 }
 
 pub(crate) async fn graphql_playground() -> impl IntoResponse {
-    Html(playground_source( 
+    Html(playground_source(
         GraphQLPlaygroundConfig::new("/").subscription_endpoint("/ws"),
     ))
 }
 
 pub(crate) async fn graphql_handler(
-    req: Json<GraphQLRequest>,
-    Extension(schema): Extension<ServiceSchema>, // (2)
+    req: GraphQLRequest,
+    Extension(schema): Extension<ServiceSchema>,
 ) -> GraphQLResponse {
-    schema.execute(req.0.into_inner()).await.into() // (3)
+    let span = span!(Level::INFO, "graphql_execution"); 
+
+    info!("Processing GraphQL request");
+
+    let response = async move { schema.execute(req.into_inner()).await } // (2)
+        .instrument(span.clone())
+        .await;
+
+    info!("Processing GraphQL request finished");
+
+    response
+        .extension( 
+            "traceId",
+            async_graphql::Value::String(format!(
+                "{}",
+                span.context().span().span_context().trace_id()
+            )),
+        )
+        .into()
 }
