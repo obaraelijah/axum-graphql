@@ -1,1 +1,1 @@
-mod metrics;
+pub(crate) mod metrics;
